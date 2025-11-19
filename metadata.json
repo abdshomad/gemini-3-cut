@@ -1,0 +1,7 @@
+{
+  "name": "Gemini 3 Cut",
+  "description": "A powerful, browser-based AI video editor featuring timeline editing, multi-track support, and Gemini-powered creative tools.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
