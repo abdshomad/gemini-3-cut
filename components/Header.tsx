@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, Settings, Share2, PlayCircle } from 'lucide-react';
+import { Download, Settings, Share2, PlayCircle, Scissors } from 'lucide-react';
 import { useEditor } from '../context/EditorContext';
 
 const Header = () => {
@@ -10,17 +10,17 @@ const Header = () => {
         setIsExporting(true);
         setTimeout(() => {
             setIsExporting(false);
-            alert("Export simulation complete! in a real app, this would download the .mp4 created via MediaRecorder/FFmpeg.");
+            alert("Export simulation complete!");
         }, 2000);
     };
 
   return (
-    <header className="h-14 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between px-4">
+    <header className="h-14 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between px-4 z-50">
       <div className="flex items-center gap-3">
         <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-            <PlayCircle size={20} className="text-white" />
+            <Scissors size={20} className="text-white" />
         </div>
-        <h1 className="font-bold text-lg tracking-tight text-white">NebulaCut</h1>
+        <h1 className="font-bold text-lg tracking-tight text-white">Gemini 3 Cut</h1>
         <span className="text-xs bg-zinc-800 px-2 py-0.5 rounded text-zinc-400 border border-zinc-700">Beta</span>
       </div>
 

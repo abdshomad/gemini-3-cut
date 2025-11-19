@@ -1,18 +1,16 @@
 import React, { useRef, useState } from 'react';
 import { useEditor } from '../../context/EditorContext';
 import TrackItem from './TrackItem';
-import { Play, Pause, SkipBack, SkipForward, ZoomIn, ZoomOut } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, ZoomIn, ZoomOut, Scissors } from 'lucide-react';
 
 const Timeline = () => {
   const { state, dispatch } = useEditor();
   const timelineRef = useRef<HTMLDivElement>(null);
-  const [isDraggingHeader, setIsDraggingHeader] = useState(false);
 
   const handleTimelineClick = (e: React.MouseEvent) => {
       if (!timelineRef.current) return;
       const rect = timelineRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left;
-      // Scroll offset
       const scrollLeft = timelineRef.current.scrollLeft;
       const time = (x + scrollLeft) / state.zoomLevel;
       dispatch({ type: 'SET_CURRENT_TIME', payload: time });
@@ -26,11 +24,19 @@ const Timeline = () => {
   };
 
   return (
-    <div className="h-1/3 bg-zinc-900 border-t border-zinc-800 flex flex-col">
+    <div className="h-1/3 bg-zinc-900 border-t border-zinc-800 flex flex-col z-30">
       {/* Timeline Toolbar */}
-      <div className="h-12 border-b border-zinc-800 flex items-center px-4 justify-between bg-zinc-900">
-         <div className="flex items-center gap-2">
+      <div className="h-12 border-b border-zinc-800 flex items-center px-4 justify-between bg-zinc-900 select-none">
+         <div className="flex items-center gap-4">
              <span className="text-mono font-bold text-blue-400 text-lg w-28">{formatTime(state.currentTime)}</span>
+             <div className="h-6 w-px bg-zinc-700 mx-2"></div>
+             <button 
+                onClick={() => dispatch({ type: 'SPLIT_CLIP' })}
+                className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors ${state.selectedClipId ? 'bg-zinc-800 text-white hover:bg-zinc-700' : 'text-zinc-600 cursor-not-allowed'}`}
+                disabled={!state.selectedClipId}
+             >
+                 <Scissors size={14} /> Split
+             </button>
          </div>
          
          <div className="flex items-center gap-4">
@@ -60,15 +66,15 @@ const Timeline = () => {
 
       {/* Tracks Container */}
       <div className="flex-1 flex overflow-hidden">
-          {/* Track Headers (Left) */}
+          {/* Track Headers */}
           <div className="w-64 bg-zinc-900 border-r border-zinc-800 flex-shrink-0 z-20 shadow-lg">
               <div className="h-8 bg-zinc-900 border-b border-zinc-800"></div> {/* Ruler spacer */}
               {state.project.tracks.map(track => (
-                  <div key={track.id} className="h-24 border-b border-zinc-800 p-3 flex flex-col justify-center">
+                  <div key={track.id} className="h-24 border-b border-zinc-800 p-3 flex flex-col justify-center relative">
                       <div className="font-medium text-sm text-zinc-300">{track.name}</div>
                       <div className="flex gap-2 mt-2">
-                          <button className="text-zinc-600 hover:text-zinc-400 text-xs bg-zinc-800 px-2 py-1 rounded">Mute</button>
-                          <button className="text-zinc-600 hover:text-zinc-400 text-xs bg-zinc-800 px-2 py-1 rounded">Hide</button>
+                          <button className="text-zinc-600 hover:text-zinc-400 text-xs bg-zinc-800 px-2 py-1 rounded">M</button>
+                          <button className="text-zinc-600 hover:text-zinc-400 text-xs bg-zinc-800 px-2 py-1 rounded">H</button>
                       </div>
                   </div>
               ))}
@@ -80,24 +86,24 @@ const Timeline = () => {
             ref={timelineRef}
           >
                <div 
-                className="h-full relative"
-                style={{ width: `${state.project.duration * state.zoomLevel}px` }}
+                className="h-full relative bg-zinc-900/50"
+                style={{ width: `${Math.max(state.project.duration * state.zoomLevel, 2000)}px` }}
                >
                    {/* Ruler */}
                    <div 
                         className="h-8 border-b border-zinc-800 bg-zinc-900 sticky top-0 z-10 cursor-pointer"
                         onClick={handleTimelineClick}
                     >
-                        {Array.from({ length: Math.ceil(state.project.duration) }).map((_, i) => (
+                        {Array.from({ length: Math.ceil(state.project.duration) + 1 }).map((_, i) => (
                             <div 
                                 key={i} 
                                 className="absolute top-0 bottom-0 border-l border-zinc-700 text-[10px] text-zinc-500 pl-1 pt-1 select-none"
                                 style={{ left: i * state.zoomLevel }}
                             >
-                                {i}s
+                                {i % 5 === 0 ? i + 's' : ''}
                             </div>
                         ))}
-                        {/* Playhead Indicator on Ruler */}
+                        
                         <div 
                             className="absolute top-0 h-full w-4 -ml-2 flex justify-center z-20 pointer-events-none"
                              style={{ left: state.currentTime * state.zoomLevel }}

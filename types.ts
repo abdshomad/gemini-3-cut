@@ -1,4 +1,4 @@
-export type MediaType = 'video' | 'image' | 'text' | 'audio';
+export type MediaType = 'video' | 'image' | 'text' | 'audio' | 'sticker';
 
 export interface Clip {
   id: string;
@@ -18,7 +18,11 @@ export interface Clip {
     rotation: number;
     color?: string;
     fontSize?: number;
+    fontFamily?: string;
     volume?: number;
+    fadeIn?: number;
+    fadeOut?: number;
+    animation?: string;
   };
 }
 

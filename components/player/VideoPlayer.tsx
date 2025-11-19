@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useEditor } from '../../context/EditorContext';
-import { Clip, Project } from '../../types';
+import { Clip } from '../../types';
 
 const VideoPlayer = () => {
   const { state, dispatch } = useEditor();
@@ -9,24 +9,14 @@ const VideoPlayer = () => {
   const mediaRefs = useRef<{ [key: string]: HTMLVideoElement | HTMLImageElement | HTMLAudioElement }>({});
   const [scale, setScale] = useState(1);
 
-  // Adjust canvas size to fit container
   useEffect(() => {
     const handleResize = () => {
       if (containerRef.current && canvasRef.current) {
         const { width, height } = containerRef.current.getBoundingClientRect();
         const projectRatio = state.project.width / state.project.height;
         const containerRatio = width / height;
-
-        let finalWidth, finalHeight;
-        if (containerRatio > projectRatio) {
-          finalHeight = height - 40; // Padding
-          finalWidth = finalHeight * projectRatio;
-        } else {
-          finalWidth = width - 40;
-          finalHeight = finalWidth / projectRatio;
-        }
-        
-        setScale(finalWidth / state.project.width);
+        const s = containerRatio > projectRatio ? (height - 40) / state.project.height : (width - 40) / state.project.width;
+        setScale(s);
       }
     };
     window.addEventListener('resize', handleResize);
@@ -34,44 +24,21 @@ const VideoPlayer = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, [state.project.width, state.project.height]);
 
-  // Main Rendering Loop
   useEffect(() => {
     let animationFrameId: number;
     const ctx = canvasRef.current?.getContext('2d');
 
     const render = () => {
       if (!ctx || !canvasRef.current) return;
-
-      // Clear canvas
       ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-      
-      // Background
       ctx.fillStyle = '#000000';
       ctx.fillRect(0, 0, canvasRef.current.width, canvasRef.current.height);
 
-      // Draw tracks from bottom to top (painter's algorithm)
-      // We need to reverse tracks because usually track 1 is "bottom" but in UI it's top. 
-      // Standard convention: Top track in timeline = Top layer.
-      // Let's sort by ID or assumed index. In our state, index 0 is bottom most usually? 
-      // Actually, common NLE: Track 1 (top visual) is obscure by Track 2? 
-      // Let's assume visual stack order: index 0 is BACKGROUND, index N is FOREGROUND.
-      const visibleTracks = [...state.project.tracks].reverse(); // Or whatever logic fits. Let's try standard order first.
-
-      state.project.tracks.forEach((track) => {
+      // Simple z-index based on track order (reverse to paint top tracks last)
+      [...state.project.tracks].reverse().forEach((track) => {
         if (track.isHidden) return;
-
-        const activeClip = track.clips.find(
-          (clip) =>
-            state.currentTime >= clip.start &&
-            state.currentTime < clip.start + clip.duration
-        );
-
-        if (activeClip) {
-          drawClip(ctx, activeClip, state.currentTime);
-        } else {
-            // Stop media if not active
-            // Simplified for React: we handle play/pause in drawClip roughly or separate effect
-        }
+        const clip = track.clips.find(c => state.currentTime >= c.start && state.currentTime < c.start + c.duration);
+        if (clip) drawClip(ctx, clip, state.currentTime);
       });
 
       if (state.isPlaying) {
@@ -79,110 +46,79 @@ const VideoPlayer = () => {
         animationFrameId = requestAnimationFrame(render);
       }
     };
+    
+    state.isPlaying ? (animationFrameId = requestAnimationFrame(render)) : render();
+    return () => animationFrameId && cancelAnimationFrame(animationFrameId);
+  }, [state.isPlaying, state.currentTime, state.project]);
 
-    if (state.isPlaying) {
-        animationFrameId = requestAnimationFrame(render);
-    } else {
-        // Render one frame when paused to show updates
-        render();
-    }
-
-    return () => {
-      if (animationFrameId) cancelAnimationFrame(animationFrameId);
-    };
-  }, [state.isPlaying, state.currentTime, state.project, dispatch]);
-
-
-  // Pre-load media elements
   useEffect(() => {
-    state.project.tracks.forEach(track => {
-      track.clips.forEach(clip => {
-         if (clip.type === 'video' || clip.type === 'image' || clip.type === 'audio') {
-             if (!mediaRefs.current[clip.id] && clip.src) {
-                 let el;
-                 if (clip.type === 'video') {
-                     el = document.createElement('video');
-                     el.src = clip.src;
-                     el.muted = true; // We handle audio separately or mute for preview to avoid chaos
-                     el.playsInline = true;
-                     el.crossOrigin = "anonymous";
-                     el.load();
-                 } else if (clip.type === 'image') {
-                     el = new Image();
-                     el.src = clip.src;
-                     el.crossOrigin = "anonymous";
-                 } else if (clip.type === 'audio') {
-                     el = document.createElement('audio');
-                     el.src = clip.src;
-                     el.crossOrigin = "anonymous";
-                 }
-                 
-                 if(el) mediaRefs.current[clip.id] = el;
-             }
-         }
-      });
-    });
+    state.project.tracks.forEach(t => t.clips.forEach(c => {
+      if (['video', 'image', 'audio'].includes(c.type) && c.src && !mediaRefs.current[c.id]) {
+        let el: any;
+        if (c.type === 'video') { el = document.createElement('video'); el.muted = true; }
+        else if (c.type === 'image') { el = new Image(); }
+        else if (c.type === 'audio') { el = document.createElement('audio'); }
+        if(el) { el.src = c.src; el.crossOrigin = "anonymous"; el.load?.(); mediaRefs.current[c.id] = el; }
+      }
+    }));
   }, [state.project.tracks]);
-
 
   const drawClip = (ctx: CanvasRenderingContext2D, clip: Clip, time: number) => {
       const { width, height } = state.project;
-      
-      // Calculate clip relative time
       const clipTime = time - clip.start + clip.offset;
-
-      ctx.save();
+      const relativeTime = time - clip.start;
       
-      // Transform properties
+      ctx.save();
       const centerX = width / 2 + clip.properties.x;
       const centerY = height / 2 + clip.properties.y;
-      
       ctx.translate(centerX, centerY);
       ctx.rotate((clip.properties.rotation * Math.PI) / 180);
       ctx.scale(clip.properties.scale, clip.properties.scale);
       ctx.globalAlpha = clip.properties.opacity;
 
+      // Calculate Fade for Video/Audio
+      let volume = clip.properties.volume ?? 1;
+      if (clip.properties.fadeIn && relativeTime < clip.properties.fadeIn) {
+          const fade = relativeTime / clip.properties.fadeIn;
+          ctx.globalAlpha *= fade;
+          volume *= fade;
+      } else if (clip.properties.fadeOut && relativeTime > clip.duration - clip.properties.fadeOut) {
+          const fade = (clip.duration - relativeTime) / clip.properties.fadeOut;
+          ctx.globalAlpha *= fade;
+          volume *= fade;
+      }
+
       if (clip.type === 'text' && clip.text) {
-          ctx.font = `bold ${clip.properties.fontSize || 48}px Inter, sans-serif`;
+          ctx.font = `bold ${clip.properties.fontSize || 48}px ${clip.properties.fontFamily || 'Inter'}, sans-serif`;
           ctx.fillStyle = clip.properties.color || 'white';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.strokeStyle = 'black';
-          ctx.lineWidth = 2;
-          ctx.strokeText(clip.text, 0, 0);
+          // Simple Shadow
+          ctx.shadowColor = "rgba(0,0,0,0.5)";
+          ctx.shadowBlur = 4;
           ctx.fillText(clip.text, 0, 0);
       } else if (clip.type === 'video') {
           const vid = mediaRefs.current[clip.id] as HTMLVideoElement;
-          if (vid && vid.readyState >= 2) {
-              vid.currentTime = clipTime; // Sync video time
-              // Note: Setting currentTime constantly is heavy.
-              // In production, you'd use a seek logic to only set if drifted.
+          if (vid?.readyState >= 2) {
+              vid.currentTime = clipTime;
               ctx.drawImage(vid, -width/2, -height/2, width, height);
           }
       } else if (clip.type === 'image') {
           const img = mediaRefs.current[clip.id] as HTMLImageElement;
-          if (img && img.complete) {
-              ctx.drawImage(img, -width/2, -height/2, width, height);
-          }
+          if (img?.complete) ctx.drawImage(img, -width/2, -height/2, width, height);
       }
       
-      // Handle Audio Playing
-      if (clip.type === 'audio' || clip.type === 'video') {
+      // Audio Playback
+      if (['audio', 'video'].includes(clip.type)) {
           const media = mediaRefs.current[clip.id] as HTMLMediaElement;
           if (media) {
               if (state.isPlaying) {
-                   // Simple sync check for audio
-                   if (Math.abs(media.currentTime - clipTime) > 0.3) {
-                       media.currentTime = clipTime;
-                   }
-                   if (media.paused) media.play().catch(e => {}); // Ignore play errors
-                   media.volume = clip.properties.volume ?? 1;
-              } else {
-                  media.pause();
-              }
+                   if (Math.abs(media.currentTime - clipTime) > 0.3) media.currentTime = clipTime;
+                   if (media.paused) media.play().catch(() => {});
+                   media.volume = Math.max(0, Math.min(1, volume));
+              } else media.pause();
           }
       }
-
       ctx.restore();
   };
 
@@ -192,13 +128,7 @@ const VideoPlayer = () => {
         ref={canvasRef}
         width={state.project.width}
         height={state.project.height}
-        style={{
-             width: `${state.project.width * scale}px`,
-             height: `${state.project.height * scale}px`,
-             maxWidth: '100%',
-             maxHeight: '100%',
-             boxShadow: '0 0 50px rgba(0,0,0,0.5)'
-        }}
+        style={{ width: state.project.width * scale, height: state.project.height * scale, boxShadow: '0 0 50px rgba(0,0,0,0.5)' }}
         className="bg-black"
       />
     </div>

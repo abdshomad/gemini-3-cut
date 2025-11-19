@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, ReactNode, useCallback } from 'react';
 import { Project, Track, Clip, EditorTool, EditorState } from '../types';
 import { DEFAULT_PROJECT } from '../constants';
+import { v4 as uuidv4 } from 'uuid';
 
 type Action =
   | { type: 'SET_PROJECT'; payload: Project }
@@ -10,6 +11,7 @@ type Action =
   | { type: 'ADD_CLIP'; payload: { trackId: string; clip: Clip } }
   | { type: 'UPDATE_CLIP'; payload: { clipId: string; updates: Partial<Clip> } }
   | { type: 'DELETE_CLIP'; payload: string }
+  | { type: 'SPLIT_CLIP' }
   | { type: 'SET_TOOL'; payload: EditorTool }
   | { type: 'SET_ZOOM'; payload: number };
 
@@ -39,7 +41,6 @@ const editorReducer = (state: EditorState, action: Action): EditorState => {
       });
       return { ...state, project: { ...state.project, tracks: updatedTracksAdd } };
     case 'UPDATE_CLIP':
-      // Find clip and update it in whichever track it lives
       const updatedTracksUpd = state.project.tracks.map(track => ({
         ...track,
         clips: track.clips.map(c => 
@@ -57,6 +58,51 @@ const editorReducer = (state: EditorState, action: Action): EditorState => {
            project: { ...state.project, tracks: updatedTracksDel },
            selectedClipId: state.selectedClipId === action.payload ? null : state.selectedClipId
         };
+    case 'SPLIT_CLIP':
+        const clipToSplit = state.project.tracks
+            .flatMap(t => t.clips)
+            .find(c => c.id === state.selectedClipId);
+        
+        if (!clipToSplit) return state;
+        
+        // Validation: Playhead must be inside the clip
+        if (state.currentTime <= clipToSplit.start || state.currentTime >= clipToSplit.start + clipToSplit.duration) {
+            return state;
+        }
+
+        const splitPointRelative = state.currentTime - clipToSplit.start;
+        const firstHalfDuration = splitPointRelative;
+        const secondHalfDuration = clipToSplit.duration - splitPointRelative;
+
+        const secondClip: Clip = {
+            ...clipToSplit,
+            id: uuidv4(),
+            start: state.currentTime,
+            duration: secondHalfDuration,
+            offset: clipToSplit.offset + firstHalfDuration,
+            name: `${clipToSplit.name} (Split)`
+        };
+
+        const updatedTracksSplit = state.project.tracks.map(track => {
+            if (track.id === clipToSplit.trackId) {
+                return {
+                    ...track,
+                    clips: [
+                        ...track.clips.filter(c => c.id !== clipToSplit.id),
+                        { ...clipToSplit, duration: firstHalfDuration },
+                        secondClip
+                    ]
+                };
+            }
+            return track;
+        });
+
+        return { 
+            ...state, 
+            project: { ...state.project, tracks: updatedTracksSplit },
+            selectedClipId: secondClip.id // Select the new part
+        };
+
     case 'SET_TOOL':
         return { ...state, activeTool: action.payload };
     case 'SET_ZOOM':
@@ -72,7 +118,6 @@ const EditorContext = createContext<{
   getSelectedClip: () => Clip | undefined;
 } | null>(null);
 
-// Fix: Type the component explicitly as React.FC to avoid children prop errors
 export const EditorProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [state, dispatch] = useReducer(editorReducer, initialState);
 
